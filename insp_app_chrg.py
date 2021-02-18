@@ -1,8 +1,7 @@
 #######IMPORTS#######
 
 from global_vars import *
-from fuzzywuzzy import fuzz
-from fuzzywuzzy import process
+import Levenshtein
 import uuid
 
 #######FUNCTION DEFINITIONS#########
@@ -72,7 +71,7 @@ def names_to_match(names_list, names_list_2):
     if len(names_list)>0 and len(names_list_2)>0:
         for x in names_list:
             for y in names_list_2:
-                fuzz_ratio = fuzz.WRatio(re.sub(r'\w+', sub, x.lower()),re.sub(r'\w+', sub, y.lower()))
+                fuzz_ratio = Levenshtein.ratio(re.sub(r'\w+', sub, x.lower()),re.sub(r'\w+', sub, y.lower()))
                 max_ratio = (fuzz_ratio if fuzz_ratio > max_ratio else max_ratio)
     return max_ratio
 
@@ -181,9 +180,6 @@ def geo_combine(df, setting):
     for index, row in iterator.iterrows():
 
         progress = progress.display()
-        # if progress.meter>20:
-        #     print('fuck it im out')
-        #     break
 
         if index not in indexes_dropped:
             group = df.loc[((df["BBL"] == row["BBL"]) & (df["BBL"] != "")) | ((df["BBL Latest"] == row["BBL Latest"]) & (df["BBL Latest"]!="")) ] if setting else iterator[iterator.apply(lambda df_row: df_row["Building Number"][0]==row["Building Number"][0] and df_row["Street"][0] == row["Street"][0], axis= 1)]
@@ -233,12 +229,12 @@ def geo_combine(df, setting):
 
 def load_source_files():
 
-    application_file_path = LOCAL_LOCUS_PATH + "data/whole/dca_files/applications_updated_0.csv"
-    inspection_file_path = LOCAL_LOCUS_PATH + "data/whole/dca_files/inspections_updated_0.csv"
-    charge_file_path = LOCAL_LOCUS_PATH + "data/whole/dca_files/charges_updated_0.csv"
-    df_o1 = pd.read_csv(application_file_path)
-    df_o2 = pd.read_csv(inspection_file_path)
-    df_o3 = pd.read_csv(charge_file_path)
+    applications = s3.Bucket('nyc-business-map').Object('applications_updated_0.csv').get()
+    inspections = s3.Bucket('nyc-business-map').Object('inspections_updated_0.csv').get()
+    charges = s3.Bucket('nyc-business-map').Object('charges_updated_0.csv').get()
+    df_o1 = pd.read_csv(applications['Body'])
+    df_o2 = pd.read_csv(inspections['Body'])
+    df_o3 = pd.read_csv(charges['Body'])
 
     df_0 = pd.concat([df_o1,df_o2,df_o3], axis=0, join='outer', ignore_index=False)
 
@@ -249,11 +245,8 @@ def load_source_files():
 
 def process_0():
     df_1 = load_source_files()
-
-    print(df_1.dtypes)
-
-
-    df_1 = pickle.load( open(LOCAL_LOCUS_PATH + "data/whole/dca_files/temp/df-1.p", "rb" ))
+    #df_1 = pickle.load( open(LOCAL_LOCUS_PATH + "data/whole/dca_files/temp/df-1.p", "rb" ))
+   
     group_0 = df_1.groupby(['Record ID','Building Number', 'Street']).agg({'License Type': 'max','Business Name':"//$L$//".join,'First Temp Op Letter Issued': 'min','Last Temp Op Letter Issued': 'max','Last Temp Op Letter Expiration': 'max', 'Industry': lambda x: x.iloc[0], 'Street 2':lambda x: x.iloc[0], 'Unit Type':lambda x: x.iloc[0],'Unit':lambda x: x.iloc[0],'Description':lambda x: x.iloc[0], 'City':lambda x: x.iloc[0], 'State':lambda x: x.iloc[0], 'Zip':lambda x: x.iloc[0], 'Contact Phone':"//$L$//".join,'Active Vehicles':"//$L$//".join,'BBL':'max','BBL Latest':'max','Date of First Application': 'min','Date of Last Application':'max','Date of First Close': 'min','Date of Last Close':'max','Date of First OOB': 'min','Date of Last OOB':'max','Date of First Inspection': 'min','Date of Last Inspection':'max','Date of First Charge': 'min','Date of Last Charge':'max'})#
     df_1 = pd.DataFrame(group_0).reset_index()
     
@@ -278,7 +271,7 @@ def process_0():
     
 def process_1():
     df_2 = process_0()
-    df_2 = pickle.load( open(LOCAL_LOCUS_PATH + "data/whole/dca_files/temp/df-2.p", "rb" ))
+    #df_2 = pickle.load( open(LOCAL_LOCUS_PATH + "data/whole/dca_files/temp/df-2.p", "rb" ))
 
     df_2["FIRST"] = df_2[['First Temp Op Letter Issued', 'Date of First Application', 'Date of First Inspection', 'Date of First Charge']].min(axis=1)
 
@@ -294,7 +287,7 @@ def process_1():
 
 def process_2():
     df_3 = process_1()
-    df_3 = pickle.load( open(LOCAL_LOCUS_PATH + "data/whole/dca_files/temp/df-3.p", "rb" ))
+    #df_3 = pickle.load( open(LOCAL_LOCUS_PATH + "data/whole/dca_files/temp/df-3.p", "rb" ))
 
     df_3 = df_3.apply(lambda row: flatten_and_elim_nan(row), axis=1)
 
@@ -311,13 +304,8 @@ def process_2():
     return df_3
 
 def process_3():
-    # df_4 = process_2()
-
-    df_4 = pickle.load( open(LOCAL_LOCUS_PATH + "data/whole/dca_files/temp/df-4.p", "rb" ))
-
-    # df_4= pd.read_csv(LOCAL_LOCUS_PATH + "data/whole/dca_files/temp/gamestop.csv")
-    # cleaned_file_path = LOCAL_LOCUS_PATH + "data/whole/dca_files/temp/gs1.csv"
-    # df_4.to_csv(cleaned_file_path, index=False, quoting=csv.QUOTE_NONNUMERIC)
+    df_4 = process_2()
+    #df_4 = pickle.load( open(LOCAL_LOCUS_PATH + "data/whole/dca_files/temp/df-4.p", "rb" ))
 
     df_4["Business Name"] = df_4["Business Name"].apply(lambda x: get_unique_and_flatten(x))
     df_4["Contact Phone"] = df_4["Contact Phone"].apply(lambda x: get_unique_and_flatten(x))
@@ -364,10 +352,8 @@ def process_3():
     return df_4
 
 def begin_process():
-    # df_5 = process_3()
-    df_5 = pickle.load( open(LOCAL_LOCUS_PATH + "data/whole/dca_files/temp/df-5.p", "rb" ))
-
-    # df_5[df_5['LLID'].isin(df_5[df_5.duplicated(subset=['LLID'])]['LLID'].tolist())].to_csv("berding.csv",index=False)
+    df_5 = process_3()
+    #df_5 = pickle.load( open(LOCAL_LOCUS_PATH + "data/whole/dca_files/temp/df-5.p", "rb" ))
 
     df_5 = geo_combine(df_5, setting=False)
 
